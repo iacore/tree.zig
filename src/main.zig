@@ -1,44 +1,31 @@
 //! This file defines data structures for different types of trees:
-//! splay trees and red-black trees.
-//!
-//! A splay tree is a self-organizing data structure.  Every operation
-//! on the tree causes a splay to happen.  The splay moves the requested
-//! node to the root of the tree and partly rebalances it.
-//!
-//! This has the benefit that request locality causes faster lookups as
-//! the requested nodes move to the top of the tree.  On the other hand,
-//! every lookup causes memory writes.
-//!
-//! The Balance Theorem bounds the total access time for m operations
-//! and n inserts on an initially empty tree as O((m + n)lg n).  The
-//! amortized cost for a sequence of m accesses to a splay tree is O(lg n);
-//!
-//! A red-black tree is a binary search tree with the node color as an
-//! extra attribute.  It fulfills a set of conditions:
-//! 	- every search path from the root to a leaf consists of the
-//! 	  same number of black nodes,
-//! 	- each red node (except for the root) has a black parent,
-//! 	- each leaf node is black.
-//!
-//! Every operation on a red-black tree is bounded as O(lg n).
-//! The maximum height of a red-black tree is 2lg (n+1).
+//! splay trees.
 
 const std = @import("std");
-
-fn _Entry(comptime T: type) type {
-    return struct {
-        data: T,
-        left: ?*@This() = null,
-        right: ?*@This() = null,
-    };
-}
 
 const WhichEnd = enum { min, max };
 
 pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type {
     return struct {
-        pub const Entry = _Entry(T);
-        root: ?*Entry = null,
+        //! A splay tree is a self-organizing data structure.  Every operation
+        //! on the tree causes a splay to happen.  The splay moves the requested
+        //! node to the root of the tree and partly rebalances it.
+        //!
+        //! This has the benefit that request locality causes faster lookups as
+        //! the requested nodes move to the top of the tree.  On the other hand,
+        //! every lookup causes memory writes.
+        //!
+        //! The Balance Theorem bounds the total access time for m operations
+        //! and n inserts on an initially empty tree as O((m + n)lg n).  The
+        //! amortized cost for a sequence of m accesses to a splay tree is O(lg n);
+
+        root: ?*Node = null,
+
+        pub const Node = struct {
+            data: T,
+            left: ?*@This() = null,
+            right: ?*@This() = null,
+        };
 
         pub fn init() @This() {
             return .{};
@@ -47,34 +34,44 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type 
             return head.root == null;
         }
 
-        pub fn min(head: *@This()) ?*Entry {
+        pub fn min(head: *@This()) ?*Node {
             if (head.isEmpty()) return null;
-            minmax(head, .min);
+            splay_minmax(head, .min);
             return head.root;
         }
-        pub fn max(head: *@This()) ?*Entry {
+        pub fn max(head: *@This()) ?*Node {
             if (head.isEmpty()) return null;
-            minmax(head, .max);
+            splay_minmax(head, .max);
             return head.root;
         }
-        pub fn find(head: *@This(), elm: T) ?*Entry {
+        pub fn find(head: *@This(), elm: T) ?*Node {
             if (head.isEmpty()) return null;
             splay(head, elm);
             if (cmp(elm, head.root.?.data) == .eq) return head.root;
             return null;
         }
-        pub fn next(head: *@This(), elm: *Entry) ?*Entry {
+        pub fn next(head: *@This(), elm: *Node) ?*Node {
             splay(head, elm.data);
-            if (elm.right) |elm_right| {
-                var elm_ = elm_right;
-                while (elm_.left) |elm_left| {
-                    elm_ = elm_left;
+            if (elm.right) |child| {
+                var elm_ = child;
+                while (elm_.left) |closer| {
+                    elm_ = closer;
+                }
+                return elm_;
+            } else return null;
+        }
+        pub fn prev(head: *@This(), elm: *Node) ?*Node {
+            splay(head, elm.data);
+            if (elm.left) |child| {
+                var elm_ = child;
+                while (elm_.right) |closer| {
+                    elm_ = closer;
                 }
                 return elm_;
             } else return null;
         }
         // returns if existing node exists
-        pub fn insert(head: *@This(), elm: *Entry) ?*Entry {
+        pub fn insert(head: *@This(), elm: *Node) ?*Node {
             if (head.isEmpty()) {
                 elm.left = null; // ???
                 elm.right = null; // ???
@@ -99,7 +96,7 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type 
             head.root = elm;
             return null;
         }
-        pub fn remove(head: *@This(), elm: *Entry) ?*Entry {
+        pub fn remove(head: *@This(), elm: *Node) ?*Node {
             if (head.isEmpty()) return null;
             splay(head, elm.data);
             if (cmp(elm.data, head.root.?.data) == .eq) {
@@ -117,41 +114,40 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type 
         }
 
         // rotate{Right,Left} expect that tmp hold {.right,.left}
-        fn rotateRight(head: *@This(), tmp: *Entry) void {
+        fn rotateRight(head: *@This(), tmp: *Node) void {
             head.root.?.left = tmp.right;
             tmp.right = head.root;
             head.root = tmp;
         }
-        fn rotateLeft(head: *@This(), tmp: *Entry) void {
+        fn rotateLeft(head: *@This(), tmp: *Node) void {
             head.root.?.right = tmp.left;
             tmp.left = head.root;
             head.root = tmp;
         }
-        fn linkLeft(head: *@This(), tmp: **Entry) void {
+        fn linkLeft(head: *@This(), tmp: **Node) void {
             tmp.*.left = head.root;
             tmp.* = head.root.?;
             head.root = head.root.?.left;
         }
-        fn linkRight(head: *@This(), tmp: **Entry) void {
+        fn linkRight(head: *@This(), tmp: **Node) void {
             tmp.*.right = head.root;
             tmp.* = head.root.?;
             head.root = head.root.?.right;
         }
-        fn assemble(head: *@This(), node: *Entry, left: *Entry, right: *Entry) void {
+        fn assemble(head: *@This(), node: *Node, left: *Node, right: *Node) void {
             left.right = head.root.?.left;
             right.left = head.root.?.right;
             head.root.?.left = node.right;
             head.root.?.right = node.left;
         }
-
         fn splay(head: *@This(), elm: T) void {
-            var node: Entry = undefined;
+            var node: Node = undefined;
             node.left = null;
             node.right = null;
 
-            var left: *Entry = &node;
-            var right: *Entry = &node;
-            var tmp: ?*Entry = undefined;
+            var left: *Node = &node;
+            var right: *Node = &node;
+            var tmp: ?*Node = undefined;
 
             var comp: std.math.Order = undefined;
             while (blk: {
@@ -184,14 +180,14 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type 
         }
         /// Splay with either the minimum or the maximum element
         /// Used to find minimum or maximum element in tree.
-        fn minmax(head: *@This(), comp: WhichEnd) void {
-            var node: Entry = undefined;
+        fn splay_minmax(head: *@This(), comp: WhichEnd) void {
+            var node: Node = undefined;
             node.left = null;
             node.right = null;
 
-            var left: *Entry = &node;
-            var right: *Entry = &node;
-            var tmp: ?*Entry = undefined;
+            var left: *Node = &node;
+            var right: *Node = &node;
+            var tmp: ?*Node = undefined;
 
             while (true) {
                 switch (comp) {
@@ -231,13 +227,13 @@ test "foreach" {
     var arena = std.heap.ArenaAllocator.init(t.allocator);
     defer arena.deinit();
     for (0..10) |i| {
-        const node = try arena.allocator().create(Tree.Entry);
+        const node = try arena.allocator().create(Tree.Node);
         node.data = @intCast(i);
         const existing = tree.insert(node);
-        try t.expectEqual(@as(?*Tree.Entry, null), existing);
+        try t.expectEqual(@as(?*Tree.Node, null), existing);
     }
 
-    // iterator
+    // iterate min to max
     {
         var i: u8 = 0;
         var x = tree.min();
@@ -247,6 +243,20 @@ test "foreach" {
         }) {
             try t.expectEqual(i, _x.data);
         }
+        try t.expectEqual(@as(u8, 10), i);
+    }
+
+    // iterate max to min
+    {
+        var i: u8 = 0;
+        var x = tree.max();
+        while (x) |_x| : ({
+            x = tree.prev(_x);
+            i += 1;
+        }) {
+            try t.expectEqual(9 - i, _x.data);
+        }
+        try t.expectEqual(@as(u8, 10), i);
     }
 
     // find
@@ -259,12 +269,16 @@ test "foreach" {
 test "how to free nodes correctly" {
     const Tree = SplayTree(u8, _cmp_Entry_u8);
     var tree = Tree.init();
+
+    // insert nodes
     for (0..10) |i| {
-        const node = try t.allocator.create(Tree.Entry);
+        const node = try t.allocator.create(Tree.Node);
         node.data = @intCast(i);
         const existing = tree.insert(node);
-        try t.expectEqual(@as(?*Tree.Entry, null), existing);
+        try t.expectEqual(@as(?*Tree.Node, null), existing);
     }
+
+    // free nodes
     var x = tree.min();
     while (x) |_x| {
         x = tree.next(_x); // must do it before the node is freed
