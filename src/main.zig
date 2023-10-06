@@ -91,13 +91,14 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
                 return elm_;
             } else return null;
         }
-        pub fn insert(head: *@This(), elm: *Entry) *Entry {
+        // returns if existing node exists
+        pub fn insert(head: *@This(), elm: *Entry) ?*Entry {
             if (head.isEmpty()) {
                 elm.left = null; // ???
                 elm.right = null; // ???
             } else {
                 splay(head, elm);
-                switch (cmp(elm, head.root)) {
+                switch (cmp(elm, head.root.?)) {
                     .lt => {
                         elm.left = head.root.?.left;
                         elm.right = head.root;
@@ -133,21 +134,53 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
             return null;
         }
         fn splay(head: *@This(), elm: *Entry) void {
-            _ = elm;
-            _ = head;
+            var node: Entry = undefined;
+            node.left = null;
+            node.right = null;
+
+            var left: *Entry = &node;
+            var right: *Entry = &node;
+            var tmp: ?*Entry = undefined;
+
+            var comp: std.math.Order = undefined;
+            while (blk: {
+                comp = cmp(elm, head.root.?);
+                break :blk comp != .eq;
+            }) {
+                switch (comp) {
+                    .lt => {
+                        tmp = head.root.?.left;
+                        if (tmp == null) break;
+                        if (cmp(elm, tmp.?) == .lt) {
+                            rotateRight(head, tmp.?);
+                            if (head.root.?.left == null) break;
+                        }
+                        linkLeft(head, &right);
+                    },
+                    .gt => {
+                        tmp = head.root.?.right;
+                        if (tmp == null) break;
+                        if (cmp(elm, tmp.?) == .gt) {
+                            rotateLeft(head, tmp.?);
+                            if (head.root.?.right == null) break;
+                        }
+                        linkRight(head, &left);
+                    },
+                    .eq => {},
+                }
+            }
+            assemble(head, &node, left, right);
         }
         /// Splay with either the minimum or the maximum element
         /// Used to find minimum or maximum element in tree.
         fn minmax(head: *@This(), comp: WhichEnd) void {
             var node: Entry = undefined;
-            var left: *Entry = undefined;
-            var right: *Entry = undefined;
-            var tmp: ?*Entry = undefined;
-
             node.left = null;
             node.right = null;
-            left = &node;
-            right = &node;
+
+            var left: *Entry = &node;
+            var right: *Entry = &node;
+            var tmp: ?*Entry = undefined;
 
             while (true) {
                 switch (comp) {
@@ -187,14 +220,25 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
     };
 }
 
-const testing = std.testing;
+const t = std.testing;
 
 fn _cmp_Entry_u8(lhs: *_Entry(u8), rhs: *_Entry(u8)) std.math.Order {
     return std.math.order(lhs.data, rhs.data);
 }
 test "foreach" {
-    var tree = SplayTree(u8, _cmp_Entry_u8).init();
+    const Tree = SplayTree(u8, _cmp_Entry_u8);
+    var tree = Tree.init();
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    for (0..10) |i| {
+        const node = try arena.allocator().create(Tree.Entry);
+        node.data = @intCast(i);
+        const existing = tree.insert(node);
+        try t.expectEqual(existing, null);
+    }
     var x = tree.min();
-    while (x) |_x| : (x = tree.next(_x)) {}
+    while (x) |_x| : (x = tree.next(_x)) {
+        std.log.warn("{}", .{_x.data});
+    }
 }
 // todo: add tests
