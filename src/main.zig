@@ -35,7 +35,7 @@ fn _Entry(comptime T: type) type {
 
 const WhichEnd = enum { min, max };
 
-pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std.math.Order) type {
+pub fn SplayTree(comptime T: type, comptime cmp: fn (T, T) std.math.Order) type {
     return struct {
         pub const Entry = _Entry(T);
         root: ?*Entry = null,
@@ -45,6 +45,75 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
         }
         pub fn isEmpty(head: @This()) bool {
             return head.root == null;
+        }
+
+        pub fn min(head: *@This()) ?*Entry {
+            if (head.isEmpty()) return null;
+            minmax(head, .min);
+            return head.root;
+        }
+        pub fn max(head: *@This()) ?*Entry {
+            if (head.isEmpty()) return null;
+            minmax(head, .max);
+            return head.root;
+        }
+        pub fn find(head: *@This(), elm: T) ?*Entry {
+            if (head.isEmpty()) return null;
+            splay(head, elm);
+            if (cmp(elm, head.root.?.data) == .eq) return head.root;
+            return null;
+        }
+        pub fn next(head: *@This(), elm: *Entry) ?*Entry {
+            splay(head, elm.data);
+            if (elm.right) |elm_right| {
+                var elm_ = elm_right;
+                while (elm_.left) |elm_left| {
+                    elm_ = elm_left;
+                }
+                return elm_;
+            } else return null;
+        }
+        // returns if existing node exists
+        pub fn insert(head: *@This(), elm: *Entry) ?*Entry {
+            if (head.isEmpty()) {
+                elm.left = null; // ???
+                elm.right = null; // ???
+            } else {
+                splay(head, elm.data);
+                switch (cmp(elm.data, head.root.?.data)) {
+                    .lt => {
+                        elm.left = head.root.?.left;
+                        elm.right = head.root;
+                        head.root.?.left = null;
+                    },
+                    .gt => {
+                        elm.right = head.root.?.right;
+                        elm.left = head.root;
+                        head.root.?.right = null;
+                    },
+                    .eq => {
+                        return head.root;
+                    },
+                }
+            }
+            head.root = elm;
+            return null;
+        }
+        pub fn remove(head: *@This(), elm: *Entry) ?*Entry {
+            if (head.isEmpty()) return null;
+            splay(head, elm.data);
+            if (cmp(elm.data, head.root.?.data) == .eq) {
+                if (head.root.?.left == null) {
+                    head.root = head.root.?.right;
+                } else {
+                    const tmp = head.root.?.right;
+                    head.root = head.root.?.left;
+                    splay(head, elm.data);
+                    head.root.?.right = tmp;
+                }
+                return elm;
+            }
+            return null;
         }
 
         // rotate{Right,Left} expect that tmp hold {.right,.left}
@@ -75,65 +144,7 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
             head.root.?.right = node.left;
         }
 
-        pub fn find(head: *@This(), elm: *Entry) ?*Entry {
-            if (head.isEmpty()) return null;
-            splay(head, elm);
-            if (cmp(elm, head.root) == .eq) return head.root;
-            return null;
-        }
-        pub fn next(head: *@This(), elm: *Entry) ?*Entry {
-            splay(head, elm);
-            if (elm.right) |elm_right| {
-                var elm_ = elm_right;
-                while (elm_.left) |elm_left| {
-                    elm_ = elm_left;
-                }
-                return elm_;
-            } else return null;
-        }
-        // returns if existing node exists
-        pub fn insert(head: *@This(), elm: *Entry) ?*Entry {
-            if (head.isEmpty()) {
-                elm.left = null; // ???
-                elm.right = null; // ???
-            } else {
-                splay(head, elm);
-                switch (cmp(elm, head.root.?)) {
-                    .lt => {
-                        elm.left = head.root.?.left;
-                        elm.right = head.root;
-                        head.root.?.left = null;
-                    },
-                    .gt => {
-                        elm.right = head.root.?.right;
-                        elm.left = head.root;
-                        head.root.?.right = null;
-                    },
-                    .eq => {
-                        return head.root;
-                    },
-                }
-            }
-            head.root = elm;
-            return null;
-        }
-        pub fn remove(head: *@This(), elm: *Entry) ?*Entry {
-            if (head.isEmpty()) return null;
-            splay(head, elm);
-            if (cmp(elm, head.root.?) == .eq) {
-                if (head.root.?.left == null) {
-                    head.root = head.root.?.right;
-                } else {
-                    const tmp = head.root.?.right;
-                    head.root = head.root.?.left;
-                    splay(head, elm);
-                    head.root.?.right = tmp;
-                }
-                return elm;
-            }
-            return null;
-        }
-        fn splay(head: *@This(), elm: *Entry) void {
+        fn splay(head: *@This(), elm: T) void {
             var node: Entry = undefined;
             node.left = null;
             node.right = null;
@@ -144,14 +155,14 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
 
             var comp: std.math.Order = undefined;
             while (blk: {
-                comp = cmp(elm, head.root.?);
+                comp = cmp(elm, head.root.?.data);
                 break :blk comp != .eq;
             }) {
                 switch (comp) {
                     .lt => {
                         tmp = head.root.?.left;
                         if (tmp == null) break;
-                        if (cmp(elm, tmp.?) == .lt) {
+                        if (cmp(elm, tmp.?.data) == .lt) {
                             rotateRight(head, tmp.?);
                             if (head.root.?.left == null) break;
                         }
@@ -160,7 +171,7 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
                     .gt => {
                         tmp = head.root.?.right;
                         if (tmp == null) break;
-                        if (cmp(elm, tmp.?) == .gt) {
+                        if (cmp(elm, tmp.?.data) == .gt) {
                             rotateLeft(head, tmp.?);
                             if (head.root.?.right == null) break;
                         }
@@ -206,24 +217,13 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
             }
             assemble(head, &node, left, right);
         }
-
-        pub fn min(head: *@This()) ?*Entry {
-            if (head.isEmpty()) return null;
-            minmax(head, .min);
-            return head.root;
-        }
-        pub fn max(head: *@This()) ?*Entry {
-            if (head.isEmpty()) return null;
-            minmax(head, .max);
-            return head.root;
-        }
     };
 }
 
 const t = std.testing;
 
-fn _cmp_Entry_u8(lhs: *_Entry(u8), rhs: *_Entry(u8)) std.math.Order {
-    return std.math.order(lhs.data, rhs.data);
+fn _cmp_Entry_u8(lhs: u8, rhs: u8) std.math.Order {
+    return std.math.order(lhs, rhs);
 }
 test "foreach" {
     const Tree = SplayTree(u8, _cmp_Entry_u8);
@@ -236,13 +236,23 @@ test "foreach" {
         const existing = tree.insert(node);
         try t.expectEqual(@as(?*Tree.Entry, null), existing);
     }
-    var i: u8 = 0;
-    var x = tree.min();
-    while (x) |_x| : ({
-        x = tree.next(_x);
-        i += 1;
-    }) {
-        try t.expectEqual(i, _x.data);
+
+    // iterator
+    {
+        var i: u8 = 0;
+        var x = tree.min();
+        while (x) |_x| : ({
+            x = tree.next(_x);
+            i += 1;
+        }) {
+            try t.expectEqual(i, _x.data);
+        }
+    }
+
+    // find
+    for (0..10) |i| {
+        const node = tree.find(@intCast(i));
+        _ = node.?;
     }
 }
 
