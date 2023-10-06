@@ -117,10 +117,10 @@ pub fn SplayTree(comptime T: type, comptime cmp: fn (*_Entry(T), *_Entry(T)) std
             head.root = elm;
             return null;
         }
-        pub fn remove(head: *@This(), elm: *Entry) *Entry {
+        pub fn remove(head: *@This(), elm: *Entry) ?*Entry {
             if (head.isEmpty()) return null;
             splay(head, elm);
-            if (cmp(elm, head.root) == .eq) {
+            if (cmp(elm, head.root.?) == .eq) {
                 if (head.root.?.left == null) {
                     head.root = head.root.?.right;
                 } else {
@@ -234,11 +234,32 @@ test "foreach" {
         const node = try arena.allocator().create(Tree.Entry);
         node.data = @intCast(i);
         const existing = tree.insert(node);
-        try t.expectEqual(existing, null);
+        try t.expectEqual(@as(?*Tree.Entry, null), existing);
     }
+    var i: u8 = 0;
     var x = tree.min();
-    while (x) |_x| : (x = tree.next(_x)) {
-        std.log.warn("{}", .{_x.data});
+    while (x) |_x| : ({
+        x = tree.next(_x);
+        i += 1;
+    }) {
+        try t.expectEqual(i, _x.data);
     }
 }
-// todo: add tests
+
+test "how to free nodes correctly" {
+    const Tree = SplayTree(u8, _cmp_Entry_u8);
+    var tree = Tree.init();
+    for (0..10) |i| {
+        const node = try t.allocator.create(Tree.Entry);
+        node.data = @intCast(i);
+        const existing = tree.insert(node);
+        try t.expectEqual(@as(?*Tree.Entry, null), existing);
+    }
+    var x = tree.min();
+    while (x) |_x| {
+        x = tree.next(_x); // must do it before the node is freed
+        const _x_dup = tree.remove(_x);
+        try t.expectEqual(_x, _x_dup.?);
+        t.allocator.destroy(_x);
+    }
+}
